@@ -1,87 +1,38 @@
-const countInput = document.getElementById("countInput");
-const startBtn = document.getElementById("startBtn");
-const stopBtn = document.getElementById("stopBtn");
-const statusDiv = document.getElementById("status");
-const presetBtns = document.querySelectorAll(".presets button");
+/**
+ * War Era Safe Crate Opener
+ * https://app.warera.io
+ *
+ * Safe single-case auto-opener with:
+ * - Server-confirmed deduction counting (tracks badge drops, no false counts)
+ * - Auto-modal reopening (clicks crate in inventory if modal is closed)
+ * - Pure MouseEvents (prevents React 18 / Next.js setPointerCapture crashes)
+ * - Anti-detection spatial divergence & humanized bounce intervals (~1.8s)
+ * - Adaptive backoff on "Please slow down" rate-limit notices
+ * - Press 'Esc' anytime to stop
+ */
 
-presetBtns.forEach(btn => {
-  btn.addEventListener("click", () => {
-    presetBtns.forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    countInput.value = btn.dataset.val;
-  });
-});
-
-async function getActiveTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab;
-}
-
-startBtn.addEventListener("click", async () => {
-  const count = parseInt(countInput.value, 10);
-  if (isNaN(count) || count <= 0) {
-    statusDiv.style.color = "#f87171";
-    statusDiv.textContent = "Please enter a valid count (> 0)";
-    return;
-  }
-
-  const tab = await getActiveTab();
-  if (!tab || !tab.url || !tab.url.includes("warera.io")) {
-    statusDiv.style.color = "#f87171";
-    statusDiv.textContent = "Open War Era (app.warera.io) first!";
-    return;
-  }
-
-  statusDiv.style.color = "#34d399";
-  statusDiv.textContent = `Starting ${count} crates... Check in-game HUD!`;
-
-  await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    world: "MAIN",
-    func: runInPageOpener,
-    args: [count]
-  });
-
-  setTimeout(() => {
-    window.close();
-  }, 700);
-});
-
-stopBtn.addEventListener("click", async () => {
-  const tab = await getActiveTab();
-  if (tab && tab.id) {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      world: "MAIN",
-      func: () => {
-        if (typeof window.stopOpener === "function") {
-          window.stopOpener();
-        }
-      }
-    });
-    statusDiv.style.color = "#f87171";
-    statusDiv.textContent = "Stopped.";
-  }
-});
-
-// =============================================================
-// IN-PAGE EXECUTION FUNCTION (Runs directly in page context)
-// =============================================================
-function runInPageOpener(targetCount) {
-  // If already running, cancel previous instance first
+(function warEraOpener() {
+  // If already running, cancel previous instance
   if (typeof window.stopOpener === "function") {
     window.stopOpener();
   }
 
-  const baseInterval = 1800;
+  const baseInterval = 1800; // Average click cadence (~1.8s)
+  let targetCount = parseInt(prompt("How many boxes to open?", "10"), 10);
+  if (isNaN(targetCount) || targetCount <= 0) {
+    console.log("[Opener] Cancelled.");
+    return;
+  }
+
   let isRunning = true;
   let confirmedOpened = 0;
   let isThrottled = false;
   let retryCount = 0;
 
-  // -----------------------------------------------------------
+  console.log(`%c[Opener] Target: ${targetCount} confirmed boxes. Starting...`, "color: #10b981; font-weight: bold;");
+  console.log("%c[Opener] Press 'Esc' or run stopOpener() to cancel anytime.", "color: #fbbf24;");
+
   // Floating On-Screen HUD
-  // -----------------------------------------------------------
   let hud = document.getElementById("warera-opener-hud");
   if (!hud) {
     hud = document.createElement("div");
@@ -130,13 +81,12 @@ function runInPageOpener(targetCount) {
 
   updateHUD(`Starting... 0/${targetCount} opened`);
 
-  // Stop controller
   window.stopOpener = () => {
     if (!isRunning) return;
     isRunning = false;
     observer.disconnect();
-    closeHUD(`⏹ Opener stopped. Total opened: ${confirmedOpened}/${targetCount}`);
-    console.log(`[Opener] Stopped. Confirmed opened: ${confirmedOpened}/${targetCount}`);
+    closeHUD(`⏹ Stopped. Total opened: ${confirmedOpened}/${targetCount}`);
+    console.log(`%c[Opener] Stopped. Confirmed opened: ${confirmedOpened}/${targetCount}`, "color: #ef4444; font-weight: bold;");
   };
 
   const keyHandler = (e) => {
@@ -148,7 +98,7 @@ function runInPageOpener(targetCount) {
   window.addEventListener("keydown", keyHandler);
 
   // -----------------------------------------------------------
-  // Adaptive Throttle Watcher
+  // 1. Adaptive Throttle Watcher ("Please slow down")
   // -----------------------------------------------------------
   const observer = new MutationObserver((mutations) => {
     for (const m of mutations) {
@@ -171,7 +121,7 @@ function runInPageOpener(targetCount) {
   observer.observe(document.body, { childList: true, subtree: true });
 
   // -----------------------------------------------------------
-  // Safe Click (Pure MouseEvent)
+  // 2. Safe Click (Pure MouseEvents - No setPointerCapture bugs)
   // -----------------------------------------------------------
   function safeClick(el) {
     if (!el || typeof el.getBoundingClientRect !== "function") return;
@@ -191,7 +141,7 @@ function runInPageOpener(targetCount) {
   }
 
   // -----------------------------------------------------------
-  // Element Finders
+  // 3. Element Finders
   // -----------------------------------------------------------
   function getOpenCaseButton() {
     const buttons = Array.from(document.querySelectorAll("button, [role='button']"));
@@ -236,7 +186,7 @@ function runInPageOpener(targetCount) {
   }
 
   // -----------------------------------------------------------
-  // Main Execution Loop
+  // 4. Main Open Loop
   // -----------------------------------------------------------
   (async function loop() {
     while (isRunning && confirmedOpened < targetCount) {
@@ -258,12 +208,13 @@ function runInPageOpener(targetCount) {
 
         const countBefore = getRemainingCount();
         if (countBefore === null || countBefore <= 0) {
-          console.log("[Opener] No more crates remaining.");
+          console.log("[Opener] No more crates remaining in stock.");
           break;
         }
 
         safeClick(openBtn);
 
+        // Wait for confirmed deduction in the badge count
         const clickTime = Date.now();
         let confirmed = false;
         while (Date.now() - clickTime < 7000) {
@@ -279,17 +230,18 @@ function runInPageOpener(targetCount) {
           confirmedOpened++;
           const stock = getRemainingCount();
           updateHUD(`Opened ${confirmedOpened}/${targetCount} (Stock: ${stock !== null ? stock : '?'})`);
-          console.log(`[Opener] Confirmed Open ${confirmedOpened}/${targetCount}`);
+          console.log(`[Opener] Confirmed Open ${confirmedOpened}/${targetCount} (Stock: ${stock})`);
         } else {
           console.warn("[Opener] Spin animation took longer or click was missed. Retrying next tick...");
         }
 
+        // Calm bounce pause (~1.8s +/- 200ms)
         const jitter = (Math.random() - 0.5) * 400;
         await new Promise(r => setTimeout(r, Math.max(1400, baseInterval + jitter)));
         continue;
       }
 
-      // CASE 2: Modal closed -> click crate in inventory
+      // CASE 2: Modal closed -> click crate in inventory to open modal
       const crate = getInventoryCrate();
       if (crate) {
         updateHUD(`Opening modal from inventory...`);
@@ -310,10 +262,11 @@ function runInPageOpener(targetCount) {
 
     if (confirmedOpened >= targetCount) {
       closeHUD(`🎉 Target of ${targetCount} confirmed boxes reached!`);
+      console.log(`%c[Opener] Target of ${targetCount} confirmed boxes reached!`, "color: #10b981; font-weight: bold; font-size: 13px;");
     } else {
       closeHUD(`⏹ Finished: ${confirmedOpened}/${targetCount} boxes opened`);
     }
 
     window.stopOpener();
   })();
-}
+})();
