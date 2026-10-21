@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>War Era Crate Opener</title>
+  <style>
+    body {
+      width: 270px;
+      margin: 0;
+      padding: 16px;
+      background: #12141a;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      box-sizing: border-box;
+      user-select: none;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .header img {
+      width: 24px;
+      height: 24px;
+    }
+    h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      color: #34d399;
+      letter-spacing: -0.01em;
+    }
+    .field {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #94a3b8;
+      margin-bottom: 6px;
+    }
+    .presets {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .presets button {
+      flex: 1;
+      padding: 6px 0;
+      background: #1e2330;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .presets button:hover {
+      background: #283042;
+      border-color: #34d399;
+      color: #fff;
+    }
+    .presets button.active {
+      background: #064e3b;
+      border-color: #10b981;
+      color: #6ee7b7;
+    }
+    input[type="number"] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 12px;
+      background: #0a0d14;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="number"]:focus {
+      border-color: #34d399;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .btn-start {
+      flex: 2;
+      padding: 10px;
+      background: #059669;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-start:hover {
+      background: #10b981;
+    }
+    .btn-stop {
+      flex: 1;
+      padding: 10px;
+      background: #991b1b;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-stop:hover {
+      background: #dc2626;
+    }
+    #status {
+      margin-top: 12px;
+      font-size: 11px;
+      color: #94a3b8;
+      text-align: center;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="icons/icon-48.png" alt="icon">
+    <h2>War Era Opener</h2>
+  </div>
+
+  <div class="field">
+    <label>Crates to open</label>
+    <div class="presets">
+      <button type="button" data-val="5">5</button>
+      <button type="button" data-val="10" class="active">10</button>
+      <button type="button" data-val="25">25</button>
+      <button type="button" data-val="50">50</button>
+    </div>
+    <input type="number" id="countInput" min="1" max="999" value="10">
+  </div>
+
+  <div class="actions">
+    <button class="btn-start" id="startBtn">▶ Start Opening</button>
+    <button class="btn-stop" id="stopBtn">⏹ Stop</button>
+  </div>
+
+  <div id="status">Press <b>Esc</b> anytime in-game to cancel.</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

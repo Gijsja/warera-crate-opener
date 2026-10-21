@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "War Era Crate Opener",
+  "version": "1.0.0",
+  "description": "Safe, humanized auto-crate opener for War Era with confirmed badge tracking and adaptive backoff.",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["https://app.warera.io/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "warera-opener@local.addon",
+      "strict_min_version": "109.0"
+    }
+  }
+}
