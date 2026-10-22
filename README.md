@@ -37,7 +37,8 @@ Auto-dismantles low-tier crate-drop knives for scraps without accidentally scrap
 - **Strict Target Filtering**: The dismantler only targets knife assets (`knife.png` / knife icon SVG) and strictly ignores any item with the `Equip.` badge, protecting all your tanks, guns, rifles, and equipped gear.
 - **Auto-Expansion**: Automatically clicks `"Show all"` if your weapons list is collapsed so all knives in inventory are visible.
 - **Confirmed Deduction Tracking**: Watches the DOM and server-confirmed state before incrementing the counter, ensuring no false counts during animations or network lag.
-- **Pure MouseEvents**: Uses clean synthetic `MouseEvent` sequences (`mousedown`, `mouseup`, `click`) to eliminate React 18 / Next.js `Element.setPointerCapture` pointer crash bugs.
-- **Anti-Bot Click Jitter**: Randomized spatial click coordinates within button boundaries and natural bounce cadences (~1.5s – 1.8s).
-- **Adaptive Rate-Limit Backoff**: Automatically pauses for 4 seconds if the server displays a `"Please slow down"` notice.
-- **Floating Status HUD**: Displays an on-screen floating pill showing real-time progress and remaining stock with an emergency `[ESC to cancel]` shortcut.
+- **Pure MouseEvents & Pointer Capture Guard**: Uses clean synthetic `MouseEvent` sequences (`mousedown`, `mouseup`, `click`) and safe pointer capture guards to eliminate React 18 / Next.js `Element.setPointerCapture` pointer crash bugs.
+- **Single-Action Trigger (Anti-Hammering)**: Fires exactly one clean dismantle action per knife, eliminating duplicate click spamming and server burst limits.
+- **Humanized Cadence & Anti-Bot Jitter**: Randomized spatial click coordinates within button boundaries and natural delays (~2.2s – 2.8s) matching human speed.
+- **Adaptive Rate-Limit Cooldown**: Automatically pauses for 7 seconds to allow server rate-limit buckets to fully reset if a `"Please slow down"` notice appears.
+- **Interactive Status HUD**: Displays an on-screen floating pill showing real-time progress, an emergency `[ESC]` shortcut, and an instant clickable red `[⏹ STOP]` button.
