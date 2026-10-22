@@ -3,32 +3,28 @@
  * https://app.warera.io
  *
  * Safe auto-dismantler targeting crate-drop knives:
- * - Specifically targets knives ('knife.png' / knife SVG)
+ * - Specifically targets knives (knife SVG path / 'knife.png')
  * - Strictly protects all equipped items, tanks, rifles, and pistols
- * - Auto-expands "Show all" if inventory weapons are truncated
- * - Robust portal-aware selector (fixes position:fixed offsetParent bug)
- * - Detailed console logging so you can see every step live
- * - Anti-bot spatial divergence & randomized human cadence (~1.5s - 1.8s)
+ * - Scoped strictly to Floating-UI popover (never clicks header supporter button)
+ * - Pure MouseEvents + direct React onClick trigger (eliminates pointerId crashes)
+ * - Detailed real-time console feedback
+ * - Anti-bot spatial divergence & randomized cadence (~1.5s - 1.8s)
  * - Adaptive backoff on "Please slow down" rate-limit notices
- * - Auto-handles rare item confirmation dialogs if encountered
  * - Press 'Esc' anytime or run stopDismantler() to cancel
  */
 
 (function warEraDismantler() {
-  // If already running, cancel previous instance
   if (typeof window.stopDismantler === "function") {
     window.stopDismantler();
   }
 
-  // Ensure user is on an inventory page
   if (!window.location.href.includes("inventory")) {
     alert("[Dismantler] Please navigate to your Inventory (app.warera.io/me/inventory) first.");
     return;
   }
 
-  const baseInterval = 1600; // Cadence between dismantles (~1.6s)
+  const baseInterval = 1600;
 
-  // Ask how many knives to dismantle
   let rawInput = prompt("How many knives to dismantle? (Enter a number or 'all')", "all");
   if (rawInput === null) {
     console.log("[Dismantler] Cancelled by user.");
@@ -50,7 +46,6 @@
   let isThrottled = false;
 
   console.log(`%c[Dismantler] Target: ${targetCount === Infinity ? 'ALL' : targetCount} knives. Initializing...`, "color: #10b981; font-weight: bold; font-size: 13px;");
-  console.log("%c[Dismantler] Press 'Esc' or run stopDismantler() anytime to stop.", "color: #fbbf24;");
 
   // Floating On-Screen HUD
   let hud = document.getElementById("warera-dismantler-hud");
@@ -143,10 +138,8 @@
   observer.observe(document.body, { childList: true, subtree: true });
 
   // -----------------------------------------------------------
-  // 2. Safe Visibility & Click Helpers
+  // 2. Visibility & Click Helpers (Pure MouseEvents - No setPointerCapture crashes)
   // -----------------------------------------------------------
-
-  // Reliable visibility check (works on position:fixed Floating portals where offsetParent is null)
   function isVisible(el) {
     if (!el) return false;
     if (typeof el.checkVisibility === "function") {
@@ -168,13 +161,24 @@
     const y = rect.top + rect.height * (0.2 + factorY * 0.6);
     const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
 
-    el.dispatchEvent(new PointerEvent("pointerdown", opts));
+    // Pure MouseEvents - NEVER send synthetic PointerEvents because War Era calls setPointerCapture
     el.dispatchEvent(new MouseEvent("mousedown", opts));
-    el.dispatchEvent(new PointerEvent("pointerup", opts));
     el.dispatchEvent(new MouseEvent("mouseup", opts));
     el.dispatchEvent(new MouseEvent("click", opts));
-    if (typeof el.click === "function") {
-      el.click();
+
+    // Try direct React onClick invocation on this element or its closest interactive parent
+    let cur = el;
+    for (let i = 0; i < 3 && cur; i++) {
+      const rKey = Object.keys(cur).find(k => k.startsWith("__reactProps$"));
+      if (rKey && cur[rKey] && typeof cur[rKey].onClick === "function") {
+        try {
+          cur[rKey].onClick({ target: cur, currentTarget: cur, stopPropagation: () => {}, preventDefault: () => {} });
+          break;
+        } catch (e) {
+          console.warn("[Dismantler] React onClick trigger warning:", e);
+        }
+      }
+      cur = cur.parentElement;
     }
   }
 
@@ -182,7 +186,6 @@
   // 3. Knife & Action Finders
   // -----------------------------------------------------------
 
-  // Expand "Show all (X remaining)" if weapons are collapsed
   function expandWeaponsList() {
     const buttons = Array.from(document.querySelectorAll("button, [role='button'], div.cursor-pointer, [class*='cursor-pointer']"));
     const showAllBtn = buttons.find(b => {
@@ -198,7 +201,6 @@
     return false;
   }
 
-  // Find all unequipped knife tiles in the inventory
   function getUnequippedKnives() {
     const candidateTiles = [];
 
@@ -213,20 +215,7 @@
       return node.parentElement || node;
     }
 
-    // 1. Primary: Search <img> tags containing "knife.png" or "knife"
-    const imgs = Array.from(document.querySelectorAll("img"));
-    for (const img of imgs) {
-      if (!isVisible(img)) continue;
-      const srcStr = ((img.src || "") + " " + (img.alt || "") + " " + (img.srcset || "")).toLowerCase();
-      if (srcStr.includes("knife.png") || srcStr.includes("/knife")) {
-        const card = findClickableCard(img);
-        if (card && isVisible(card) && !candidateTiles.includes(card)) {
-          candidateTiles.push(card);
-        }
-      }
-    }
-
-    // 2. Secondary: Search SVG icons with knife path
+    // 1. Search SVG icons with knife path
     const knifePaths = Array.from(document.querySelectorAll("svg path")).filter(p => {
       const d = p.getAttribute("d") || "";
       return d.startsWith("M22,2L17.39") || d.includes("M22,2L17.39,3.75");
@@ -240,34 +229,44 @@
       }
     }
 
-    // SAFETY: Strictly filter out equipped items (has "Equip." badge or text)
+    // 2. Search <img> tags containing "knife.png" or "knife"
+    const imgs = Array.from(document.querySelectorAll("img"));
+    for (const img of imgs) {
+      if (!isVisible(img)) continue;
+      const srcStr = ((img.src || "") + " " + (img.alt || "") + " " + (img.srcset || "")).toLowerCase();
+      if (srcStr.includes("knife.png") || srcStr.includes("/knife")) {
+        const card = findClickableCard(img);
+        if (card && isVisible(card) && !candidateTiles.includes(card)) {
+          candidateTiles.push(card);
+        }
+      }
+    }
+
+    // SAFETY: Filter out equipped items
     return candidateTiles.filter(tile => {
       const text = (tile.innerText || "").toLowerCase();
       return !text.includes("equip.") && !text.includes("equipped");
     });
   }
 
-  // Find the "Dismantle" option in the open popover menu
-  function getDismantleMenuItem() {
-    // Look everywhere including Floating UI portals
-    const allElements = Array.from(document.querySelectorAll("button, [role='button'], div, a, span"));
-    return allElements.find(el => {
+  // Find the active Floating-UI popover container
+  function getActivePopover() {
+    const popovers = Array.from(document.querySelectorAll("._5hjs9w1, ._5hjs9w2, [data-floating-ui-portal]"));
+    return popovers.find(p => isVisible(p));
+  }
+
+  // Find "Dismantle" option STRICTLY INSIDE the open Floating popover
+  function getDismantleMenuItem(popover) {
+    if (!popover) return null;
+    const elements = Array.from(popover.querySelectorAll("button, [role='button'], div, a, span"));
+    return elements.find(el => {
       if (!isVisible(el)) return false;
       const text = (el.innerText || "").trim().toLowerCase();
-      if (!text) return false;
-
-      // Exclude top-level supporter bulk dismantle button
-      if (text.includes("supporter") || text.includes("craft")) return false;
-
-      // Exclude confirmation modal title/dialog header
-      if (text === "dismantle item") return false;
-
-      // Match the action menu "Dismantle" entry (e.g. "Dismantle", "Dismantle\n+2", "Dismantle +2")
+      if (!text || text === "dismantle item") return false;
       return text === "dismantle" || text.startsWith("dismantle\n") || text.startsWith("dismantle ") || (text.includes("dismantle") && text.includes("+"));
     });
   }
 
-  // Find modal confirmation button (for rare items)
   function getConfirmationButton() {
     const buttons = Array.from(document.querySelectorAll("button, [role='button']"));
     return buttons.find(b => {
@@ -303,7 +302,7 @@
           await new Promise(r => setTimeout(r, 800));
           continue;
         }
-        console.log("%c[Dismantler] No more unequipped knives found in inventory.", "color: #10b981; font-weight: bold;");
+        console.log("%c[Dismantler] All knives dismantled!", "color: #10b981; font-weight: bold;");
         break;
       }
 
@@ -312,28 +311,34 @@
       const initialCount = remainingCount;
       const targetLabel = targetCount === Infinity ? "All" : targetCount;
 
-      console.log(`[Dismantler] Found ${remainingCount} knives. Clicking knife #1...`);
+      console.log(`[Dismantler] Found ${remainingCount} knives. Clicking knife...`);
       updateHUD(`Opening menu... (${confirmedDismantled}/${targetLabel}) [${remainingCount} knives left]`);
 
       // 1. Click knife tile to open action popover
       safeClick(targetKnife);
 
-      // Wait for popover menu to appear
+      // Wait for popover menu to appear in DOM
+      let popover = null;
       let dismantleBtn = null;
       const openStart = Date.now();
+
       while (Date.now() - openStart < 2500) {
         await new Promise(r => setTimeout(r, 120));
-        dismantleBtn = getDismantleMenuItem();
-        if (dismantleBtn) break;
+        popover = getActivePopover();
+        if (popover) {
+          dismantleBtn = getDismantleMenuItem(popover);
+          if (dismantleBtn) break;
+        }
       }
 
       if (!dismantleBtn) {
-        console.warn("[Dismantler] Menu did not appear or Dismantle button not found. Retrying with direct click...");
-        // Fallback: try clicking direct child if wrapper was clicked
-        const innerImg = targetKnife.querySelector("img, svg");
-        if (innerImg) safeClick(innerImg);
+        // Fallback: try clicking direct inner child if wrapper click was intercepted
+        console.warn("[Dismantler] Popover not detected yet. Retrying knife click on inner child...");
+        const inner = targetKnife.querySelector("svg, img, div");
+        if (inner) safeClick(inner);
         await new Promise(r => setTimeout(r, 500));
-        dismantleBtn = getDismantleMenuItem();
+        popover = getActivePopover();
+        if (popover) dismantleBtn = getDismantleMenuItem(popover);
       }
 
       if (!dismantleBtn) {
@@ -342,17 +347,17 @@
         continue;
       }
 
-      console.log(`[Dismantler] Popover opened. Clicking Dismantle: "${dismantleBtn.innerText.replace(/\n/g, ' ')}"`);
+      console.log(`[Dismantler] Popover confirmed open. Clicking Dismantle: "${dismantleBtn.innerText.replace(/\n/g, ' ')}"`);
       updateHUD(`Dismantling knife... (${confirmedDismantled}/${targetLabel})`);
 
-      // 2. Click "Dismantle" in the popover
+      // 2. Click "Dismantle" inside the popover
       safeClick(dismantleBtn);
 
       // 3. Check for confirmation modal (if item is Rare+)
       await new Promise(r => setTimeout(r, 250));
       const confirmBtn = getConfirmationButton();
       if (confirmBtn) {
-        console.log("[Dismantler] Confirming dismantle dialog...");
+        console.log("[Dismantler] Confirming dialog...");
         safeClick(confirmBtn);
       }
 
@@ -372,7 +377,7 @@
         confirmedDismantled++;
         const left = Math.max(0, initialCount - 1);
         updateHUD(`Dismantled ${confirmedDismantled}/${targetLabel} (${left} remaining)`);
-        console.log(`%c[Dismantler] Confirmed dismantled: ${confirmedDismantled}/${targetLabel} (${left} left)`, "color: #10b981;");
+        console.log(`%c[Dismantler] Confirmed dismantled: ${confirmedDismantled}/${targetLabel} (${left} left)`, "color: #10b981; font-weight: bold;");
       } else {
         console.warn("[Dismantler] Deduction took longer or missed. Retrying next tick...");
       }
