@@ -25,6 +25,18 @@
       window.stopDismantler();
     } catch (e) {}
   }
+  // Prevent NextJS / Clickable Element.setPointerCapture DOMException on synthetic events
+  if (typeof Element.prototype.setPointerCapture === "function" && !Element.prototype.__warera_capture_patched__) {
+    const origSetPointerCapture = Element.prototype.setPointerCapture;
+    Element.prototype.setPointerCapture = function(pointerId) {
+      try {
+        return origSetPointerCapture.call(this, pointerId);
+      } catch (e) {
+        // Silently ignore invalid pointer id on synthetic interactions
+      }
+    };
+    Element.prototype.__warera_capture_patched__ = true;
+  }
 
   if (!window.location.href.includes("inventory")) {
     alert("[Dismantler] Please navigate to your Inventory (app.warera.io/user/.../inventory) first.");
@@ -266,13 +278,7 @@
     const y = rect.top + rect.height * (0.2 + factorY * 0.6);
     const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, buttons: 1 };
 
-    if (typeof window.PointerEvent === "function") {
-      el.dispatchEvent(new PointerEvent("pointerdown", { ...opts, pointerType: "mouse", isPrimary: true }));
-    }
     el.dispatchEvent(new MouseEvent("mousedown", opts));
-    if (typeof window.PointerEvent === "function") {
-      el.dispatchEvent(new PointerEvent("pointerup", { ...opts, buttons: 0, pointerType: "mouse", isPrimary: true }));
-    }
     el.dispatchEvent(new MouseEvent("mouseup", { ...opts, buttons: 0 }));
     el.dispatchEvent(new MouseEvent("click", { ...opts, buttons: 0 }));
 
@@ -468,13 +474,7 @@
             buttons: 1
           };
 
-          if (typeof window.PointerEvent === "function") {
-            target.dispatchEvent(new PointerEvent("pointerdown", { ...opts, pointerType: "mouse", isPrimary: true }));
-          }
           target.dispatchEvent(new MouseEvent("mousedown", opts));
-          if (typeof window.PointerEvent === "function") {
-            target.dispatchEvent(new PointerEvent("pointerup", { ...opts, buttons: 0, pointerType: "mouse", isPrimary: true }));
-          }
           target.dispatchEvent(new MouseEvent("mouseup", { ...opts, buttons: 0 }));
           target.dispatchEvent(new MouseEvent("click", { ...opts, buttons: 0 }));
         }
