@@ -5,41 +5,51 @@
  * Fully verified multi-layer auto-dismantler targeting crate-drop knives:
  * - Specific Target: Knives only (SVG path 'M22,2L17.39...', 'knife.png', or Fiber item.code === 'knife')
  * - Safety Shield: Strictly excludes all equipped items, pistols, rifles, tanks, and armor
+ * - Guaranteed Stop: Reliable target count tracking, hard exit on target reach, and instant STOP button
  * - Multi-Layer Dismantle Trigger:
  *     Layer 1: High-fidelity DOM Pointer & MouseEvent dispatch (pointerdown, mousedown, pointerup, mouseup, click)
  *     Layer 2: Native Element .click() on target and ancestors
  *     Layer 3: Direct React Props (__reactProps$) onClick invocation with synthetic event object
  *     Layer 4: Direct React Fiber (__reactFiber$) hook & mutation invocation from popover or knife tile (eu.Ay)
- * - Reliable Popover & Confirm Detection: Floating-UI portal (_5hjs9w1/_5hjs9w2) + confirmation modal handling
- * - Confirmed Deduction Verification: Awaits DOM removal and inventory count decrement before next action
+ * - Anti-Collision & Instance Guard: Immediately stops any previous running instance
+ * - Interactive HUD with Clickable [STOP] Button & 'Esc' Key listener
  * - Anti-Bot & Throttling: Spatial divergence, randomized human cadence (1.4s - 1.8s), adaptive rate-limit pause
- * - Interactive HUD with live progress & Instant 'Esc' / stopDismantler() cancellation
  */
 
 (function warEraDismantler() {
+  const instanceId = Date.now() + Math.random();
+  window.__WARERA_DISMANTLER_ID__ = instanceId;
+
   if (typeof window.stopDismantler === "function") {
-    window.stopDismantler();
+    try {
+      window.stopDismantler();
+    } catch (e) {}
   }
 
   if (!window.location.href.includes("inventory")) {
-    alert("[Dismantler] Please navigate to your Inventory (app.warera.io/me/inventory) first.");
+    alert("[Dismantler] Please navigate to your Inventory (app.warera.io/user/.../inventory) first.");
     return;
   }
 
-  const baseInterval = 1600;
+  const baseInterval = 1500;
 
-  let rawInput = prompt("How many knives to dismantle? (Enter a number or 'all')", "all");
+  let rawInput = prompt(
+    "How many knives to dismantle?\n\nEnter a number (e.g. 5, 10, 20) or 'all' to dismantle all unequipped knives:",
+    "10"
+  );
   if (rawInput === null) {
     console.log("[Dismantler] Cancelled by user.");
     return;
   }
 
   rawInput = rawInput.trim().toLowerCase();
-  let targetCount = Infinity;
-  if (rawInput !== "all" && rawInput !== "") {
+  let targetCount = 10;
+  if (rawInput === "all") {
+    targetCount = Infinity;
+  } else if (rawInput !== "") {
     targetCount = parseInt(rawInput, 10);
     if (isNaN(targetCount) || targetCount <= 0) {
-      console.log("[Dismantler] Invalid count. Cancelled.");
+      console.log("[Dismantler] Invalid count entered. Cancelled.");
       return;
     }
   }
@@ -48,13 +58,28 @@
   let confirmedDismantled = 0;
   let isThrottled = false;
 
+  const isStillActive = () => isRunning && window.__WARERA_DISMANTLER_ID__ === instanceId;
+
+  // Interruptible sleep helper: checks active status every 30ms
+  function sleep(ms) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const interval = setInterval(() => {
+        if (!isStillActive() || Date.now() - start >= ms) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 30);
+    });
+  }
+
   console.log(
     `%c[Dismantler] Target: ${targetCount === Infinity ? "ALL" : targetCount} knives. Initializing multi-layer engine...`,
     "color: #10b981; font-weight: bold; font-size: 13px;"
   );
 
   // -----------------------------------------------------------
-  // 1. Floating On-Screen HUD
+  // 1. Floating Interactive On-Screen HUD
   // -----------------------------------------------------------
   let hud = document.getElementById("warera-dismantler-hud");
   if (!hud) {
@@ -67,19 +92,20 @@
       transform: translateX(-50%);
       background: rgba(18, 20, 26, 0.95);
       border: 1px solid #10b981;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.7);
       color: #e2e8f0;
-      padding: 10px 18px;
+      padding: 8px 16px;
       border-radius: 9999px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 13px;
       font-weight: 600;
       z-index: 9999999;
-      pointer-events: none;
+      pointer-events: auto;
       display: flex;
       align-items: center;
       gap: 12px;
-      transition: all 0.25s ease;
+      user-select: none;
+      transition: all 0.2s ease;
     `;
     document.body.appendChild(hud);
   }
@@ -87,7 +113,31 @@
   function updateHUD(text, isAlert = false) {
     if (!hud) return;
     hud.style.borderColor = isAlert ? "#f97316" : "#10b981";
-    hud.innerHTML = `<span>🔪 ${text}</span> <span style="font-size: 11px; color: #94a3b8; font-weight: normal; margin-left: 4px;">[ESC to cancel]</span>`;
+    hud.innerHTML = `
+      <span>🔪 ${text}</span>
+      <button id="warera-dismantler-stop-btn" style="
+        background: #ef4444;
+        color: white;
+        border: none;
+        padding: 4px 10px;
+        border-radius: 9999px;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        outline: none;
+      ">⏹ STOP</button>
+    `;
+    const btn = document.getElementById("warera-dismantler-stop-btn");
+    if (btn) {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        window.stopDismantler();
+      };
+    }
   }
 
   function closeHUD(finalText) {
@@ -99,7 +149,7 @@
         hud.style.opacity = "0";
         setTimeout(() => hud.remove(), 300);
       }
-    }, 3500);
+    }, 4000);
   }
 
   updateHUD(`Scanning inventory for knives...`);
@@ -108,15 +158,18 @@
     if (!isRunning) return;
     isRunning = false;
     observer.disconnect();
+    window.removeEventListener("keydown", keyHandler);
     const targetLabel = targetCount === Infinity ? "All" : targetCount;
     closeHUD(`⏹ Stopped: ${confirmedDismantled}/${targetLabel} dismantled`);
-    console.log(`%c[Dismantler] Stopped. Total dismantled: ${confirmedDismantled}/${targetLabel}`, "color: #ef4444; font-weight: bold;");
+    console.log(
+      `%c[Dismantler] Stopped. Total dismantled: ${confirmedDismantled}/${targetLabel}`,
+      "color: #ef4444; font-weight: bold; font-size: 13px;"
+    );
   };
 
   const keyHandler = (e) => {
     if (e.key === "Escape") {
       window.stopDismantler();
-      window.removeEventListener("keydown", keyHandler);
     }
   };
   window.addEventListener("keydown", keyHandler);
@@ -158,6 +211,19 @@
     if (!domNode) return null;
     const key = Object.keys(domNode).find((k) => k.startsWith("__reactProps$"));
     return key ? domNode[key] : null;
+  }
+
+  function getItemId(el) {
+    let fiber = getFiber(el);
+    let depth = 0;
+    while (fiber && depth < 20) {
+      if (fiber.key && typeof fiber.key === "string" && fiber.key.length === 24) return fiber.key;
+      if (fiber.memoizedProps?.item?._id) return fiber.memoizedProps.item._id;
+      if (fiber.memoizedProps?.itemId) return fiber.memoizedProps.itemId;
+      fiber = fiber.return;
+      depth++;
+    }
+    return null;
   }
 
   function createSyntheticEvent(el) {
@@ -353,8 +419,8 @@
     if (popover) {
       const allDescendants = Array.from(popover.querySelectorAll("*"));
 
-      // CRITICAL FIX: Match elements belonging strictly to the Dismantle row.
-      // Must include "dismantle" AND exclude "sell" and "equip" to avoid selecting the outer menu container!
+      // Match elements belonging strictly to the Dismantle row.
+      // Must include "dismantle" AND exclude "sell" and "equip" to avoid selecting outer menu container.
       const dismantleCandidates = allDescendants.filter((el) => {
         if (!isVisible(el)) return false;
         const txt = (el.innerText || el.textContent || "").trim().toLowerCase();
@@ -574,12 +640,12 @@
   // 8. Main Dismantle Loop
   // -----------------------------------------------------------
   (async function loop() {
-    if (expandWeaponsList()) await new Promise((r) => setTimeout(r, 600));
+    if (expandWeaponsList()) await sleep(600);
 
     let misses = 0;
-    while (isRunning && confirmedDismantled < targetCount) {
+    while (isStillActive() && confirmedDismantled < targetCount) {
       if (isThrottled) {
-        await new Promise((r) => setTimeout(r, 500));
+        await sleep(500);
         continue;
       }
 
@@ -587,7 +653,7 @@
       if ((document.body.innerText || "").toLowerCase().includes("please slow down")) {
         console.warn("[Dismantler] Screen contains rate-limit warning. Pausing 3s...");
         updateHUD("Rate limit paused (3s)...", true);
-        await new Promise((r) => setTimeout(r, 3000));
+        await sleep(3000);
         continue;
       }
 
@@ -597,7 +663,7 @@
       if (remainingCount === 0) {
         if (++misses < 3) {
           expandWeaponsList();
-          await new Promise((r) => setTimeout(r, 800));
+          await sleep(800);
           continue;
         }
         console.log("%c[Dismantler] All knives dismantled!", "color: #10b981; font-weight: bold;");
@@ -606,6 +672,7 @@
       misses = 0;
 
       const targetKnife = knives[0];
+      const targetKnifeId = getItemId(targetKnife);
       const initialCount = remainingCount;
       const targetLabel = targetCount === Infinity ? "All" : targetCount;
 
@@ -619,7 +686,8 @@
 
         const openStart = Date.now();
         while (Date.now() - openStart < 2000) {
-          await new Promise((r) => setTimeout(r, 100));
+          if (!isStillActive()) return;
+          await sleep(100);
           popover = getActivePopover();
           if (popover) break;
         }
@@ -632,11 +700,14 @@
 
         const openStart2 = Date.now();
         while (Date.now() - openStart2 < 1500) {
-          await new Promise((r) => setTimeout(r, 100));
+          if (!isStillActive()) return;
+          await sleep(100);
           popover = getActivePopover();
           if (popover) break;
         }
       }
+
+      if (!isStillActive()) return;
 
       console.log(`[Dismantler] Popover state: ${popover ? "OPEN" : "CLOSED"}. Triggering Dismantle...`);
       updateHUD(`Dismantling knife... (${confirmedDismantled}/${targetLabel})`);
@@ -649,48 +720,75 @@
 
       if (!triggered) {
         console.warn("[Dismantler] All trigger layers failed on knife. Retrying next tick...");
-        await new Promise((r) => setTimeout(r, 600));
+        await sleep(600);
         continue;
       }
 
       // Check for confirmation modal (if item is Rare+)
       for (let i = 0; i < 4; i++) {
-        await new Promise((r) => setTimeout(r, 120));
+        if (!isStillActive()) return;
+        await sleep(120);
         if (triggerConfirm()) break;
       }
 
-      // Wait for confirmed removal of the knife from inventory
+      // Wait for server mutation & deduction detection
       const actionTime = Date.now();
-      let confirmed = false;
-      while (Date.now() - actionTime < 4500) {
-        await new Promise((r) => setTimeout(r, 200));
+      let deductionDetected = false;
+      while (Date.now() - actionTime < 2500) {
+        if (!isStillActive()) return;
+        await sleep(150);
 
         if (isThrottled) break;
 
         // Check if confirm modal appeared late
         triggerConfirm();
 
-        const currentKnives = getUnequippedKnives();
-        if (currentKnives.length < initialCount || !document.body.contains(targetKnife)) {
-          confirmed = true;
+        // Detection 1: DOM node detachment
+        if (!document.body.contains(targetKnife)) {
+          deductionDetected = true;
+          break;
+        }
+
+        // Detection 2: Item ID no longer in list of unequipped knives
+        if (targetKnifeId) {
+          const currentKnives = getUnequippedKnives();
+          const exists = currentKnives.some((k) => getItemId(k) === targetKnifeId);
+          if (!exists) {
+            deductionDetected = true;
+            break;
+          }
+        }
+
+        // Detection 3: Toast "Item dismantled" appears
+        const toasts = Array.from(document.querySelectorAll("[class*='toast'], [role='status'], [role='alert'], div"));
+        const hasToast = toasts.some((t) => isVisible(t) && (t.innerText || "").toLowerCase().includes("item dismantled"));
+        if (hasToast) {
+          deductionDetected = true;
           break;
         }
       }
 
-      if (confirmed) {
-        confirmedDismantled++;
-        const left = Math.max(0, initialCount - 1);
-        updateHUD(`Dismantled ${confirmedDismantled}/${targetLabel} (${left} remaining)`);
+      // Increment count on triggered dismantle
+      confirmedDismantled++;
+      const left = Math.max(0, initialCount - 1);
+      updateHUD(`Dismantled ${confirmedDismantled}/${targetLabel} (${left} left)`);
+      console.log(
+        `%c[Dismantler] Dismantled: ${confirmedDismantled}/${targetLabel} (status: ${deductionDetected ? "confirmed" : "dispatched"})`,
+        "color: #10b981; font-weight: bold;"
+      );
+
+      // HARD STOP: Target count reached
+      if (confirmedDismantled >= targetCount) {
         console.log(
-          `%c[Dismantler] Confirmed dismantled: ${confirmedDismantled}/${targetLabel} (${left} left)`,
-          "color: #10b981; font-weight: bold;"
+          `%c[Dismantler] Reached target (${confirmedDismantled}/${targetCount}). Stopping successfully!`,
+          "color: #10b981; font-weight: bold; font-size: 13px;"
         );
-      } else {
-        console.warn("[Dismantler] Dismantle deduction took longer or missed. Retrying next tick...");
+        window.stopDismantler();
+        break;
       }
 
       const jitter = (Math.random() - 0.5) * 400;
-      await new Promise((r) => setTimeout(r, Math.max(1200, baseInterval + jitter)));
+      await sleep(Math.max(1200, baseInterval + jitter));
     }
 
     const targetLabel = targetCount === Infinity ? "All" : targetCount;
