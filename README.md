@@ -1,29 +1,43 @@
-# War Era Crate Opener 📦
+# War Era Automation Tools 📦🔪
 
-A lightweight, safe browser script to auto-open loot boxes one-by-one in [War Era](https://app.warera.io).
+Lightweight, safe browser automation scripts for [War Era](https://app.warera.io) that bypass the need for paid supporter bulk actions by performing humanized single-action automation directly from your browser console.
 
-## Quick Start
+---
 
-1. Go to your inventory in [app.warera.io](https://app.warera.io)
+## 1. Safe Crate Opener (`opener.js`) 📦
+
+Auto-opens inventory crates and loot boxes one by one with server-confirmed deduction counting.
+
+### Usage
+1. Open your inventory on [app.warera.io](https://app.warera.io).
 2. Press **`F12`** (or **`Ctrl + Shift + K`** in Firefox / **`Ctrl + Shift + J`** in Chrome) to open the Console.
 3. Copy the code in **[`opener.js`](opener.js)**, paste it into the console, and press **Enter**.
 4. Enter how many crates you want to open (e.g. `10`).
 
-That's it! A floating status HUD will appear at the top of your screen showing live progress.
+- **Stop anytime**: Press **`Esc`** or run `stopOpener()` in the console.
 
 ---
 
-## Controls
+## 2. Safe Inventory Knife Dismantler (`dismantler.js`) 🔪
 
-- **Cancel anytime**: Press **`Esc`** on your keyboard, or type `stopOpener()` in the console.
+Auto-dismantles low-tier crate-drop knives for scraps without accidentally scrapping equipped gear, tanks, rifles, or pistols.
+
+### Usage
+1. Open your inventory on [app.warera.io](https://app.warera.io).
+2. Open the Console (**`F12`** or **`Ctrl + Shift + K`** in Firefox).
+3. Copy the code in **[`dismantler.js`](dismantler.js)**, paste it into the console, and press **Enter**.
+4. Enter how many knives to dismantle (e.g. `20` or type `all` to clear all unequipped knives).
+
+- **Stop anytime**: Press **`Esc`** or run `stopDismantler()` in the console.
 
 ---
 
-## Safety Features
+## Safety & Anti-Detection Features
 
-- **Confirmed Deduction Tracking**: Watches the actual badge count ($30 \rightarrow 29$) before incrementing the counter. Never miscounts during lag or animation reels.
-- **Auto-Reopening**: If the modal is closed, it automatically locates and clicks the crate in your inventory.
-- **Pure MouseEvents**: Eliminates React 18 / Next.js `Element.setPointerCapture` pointer crash bugs.
-- **Anti-Bot Click Jitter**: Randomized click coordinates inside the button and natural bounce cadences (~1.8s).
-- **Rate-Limit Backoff**: Automatically pauses for 4 seconds if the game displays `"Please slow down"`.
-- **Single Open Only**: Strictly avoids "Open All" or Supporter bulk buttons.
+- **Strict Target Filtering**: The dismantler only targets knife assets (`knife.png` / knife icon SVG) and strictly ignores any item with the `Equip.` badge, protecting all your tanks, guns, rifles, and equipped gear.
+- **Auto-Expansion**: Automatically clicks `"Show all"` if your weapons list is collapsed so all knives in inventory are visible.
+- **Confirmed Deduction Tracking**: Watches the DOM and server-confirmed state before incrementing the counter, ensuring no false counts during animations or network lag.
+- **Pure MouseEvents**: Uses clean synthetic `MouseEvent` sequences (`mousedown`, `mouseup`, `click`) to eliminate React 18 / Next.js `Element.setPointerCapture` pointer crash bugs.
+- **Anti-Bot Click Jitter**: Randomized spatial click coordinates within button boundaries and natural bounce cadences (~1.5s – 1.8s).
+- **Adaptive Rate-Limit Backoff**: Automatically pauses for 4 seconds if the server displays a `"Please slow down"` notice.
+- **Floating Status HUD**: Displays an on-screen floating pill showing real-time progress and remaining stock with an emergency `[ESC to cancel]` shortcut.
