@@ -1,19 +1,14 @@
 /**
- * War Era Rock-Solid Inventory Knife Dismantler
+ * War Era Gentle & Humanized Inventory Knife Dismantler
  * https://app.warera.io
  *
- * Fully verified multi-layer auto-dismantler targeting crate-drop knives:
- * - Specific Target: Knives only (SVG path 'M22,2L17.39...', 'knife.png', or Fiber item.code === 'knife')
- * - Safety Shield: Strictly excludes all equipped items, pistols, rifles, tanks, and armor
- * - Guaranteed Stop: Reliable target count tracking, hard exit on target reach, and instant STOP button
- * - Multi-Layer Dismantle Trigger:
- *     Layer 1: High-fidelity DOM Pointer & MouseEvent dispatch (pointerdown, mousedown, pointerup, mouseup, click)
- *     Layer 2: Native Element .click() on target and ancestors
- *     Layer 3: Direct React Props (__reactProps$) onClick invocation with synthetic event object
- *     Layer 4: Direct React Fiber (__reactFiber$) hook & mutation invocation from popover or knife tile (eu.Ay)
- * - Anti-Collision & Instance Guard: Immediately stops any previous running instance
+ * Safe auto-dismantler targeting crate-drop knives:
+ * - Single-Action Dispatch: Eliminates click hammering (no duplicate multi-trigger spamming)
+ * - Pure MouseEvents: Zero synthetic PointerEvents to eliminate Element.setPointerCapture crashes
+ * - Target Shield: Strictly excludes equipped items, pistols, rifles, tanks, and armor
+ * - Guaranteed Stop: Halts immediately when target count is reached
  * - Interactive HUD with Clickable [STOP] Button & 'Esc' Key listener
- * - Anti-Bot & Throttling: Spatial divergence, randomized human cadence (1.4s - 1.8s), adaptive rate-limit pause
+ * - Human Pacing & Throttle Cooldown: Natural cadence (~2.2s - 2.8s) + 7s rate-limit backoff
  */
 
 (function warEraDismantler() {
@@ -25,14 +20,15 @@
       window.stopDismantler();
     } catch (e) {}
   }
-  // Prevent NextJS / Clickable Element.setPointerCapture DOMException on synthetic events
+
+  // Prevent NextJS / Clickable Element.setPointerCapture DOMException on synthetic interactions
   if (typeof Element.prototype.setPointerCapture === "function" && !Element.prototype.__warera_capture_patched__) {
     const origSetPointerCapture = Element.prototype.setPointerCapture;
     Element.prototype.setPointerCapture = function(pointerId) {
       try {
         return origSetPointerCapture.call(this, pointerId);
       } catch (e) {
-        // Silently ignore invalid pointer id on synthetic interactions
+        // Silently ignore invalid pointer id
       }
     };
     Element.prototype.__warera_capture_patched__ = true;
@@ -43,7 +39,8 @@
     return;
   }
 
-  const baseInterval = 1500;
+  // Gentle human cadence: ~2.3 seconds base delay
+  const baseInterval = 2300;
 
   let rawInput = prompt(
     "How many knives to dismantle?\n\nEnter a number (e.g. 5, 10, 20) or 'all' to dismantle all unequipped knives:",
@@ -69,6 +66,7 @@
   let isRunning = true;
   let confirmedDismantled = 0;
   let isThrottled = false;
+  let throttleBackoff = 0;
 
   const isStillActive = () => isRunning && window.__WARERA_DISMANTLER_ID__ === instanceId;
 
@@ -86,7 +84,7 @@
   }
 
   console.log(
-    `%c[Dismantler] Target: ${targetCount === Infinity ? "ALL" : targetCount} knives. Initializing multi-layer engine...`,
+    `%c[Dismantler] Target: ${targetCount === Infinity ? "ALL" : targetCount} knives. Initializing gentle human engine...`,
     "color: #10b981; font-weight: bold; font-size: 13px;"
   );
 
@@ -195,14 +193,15 @@
         if (node.nodeType === Node.ELEMENT_NODE) {
           const txt = (node.innerText || "").toLowerCase();
           if (txt.includes("slow down") || txt.includes("please slow down")) {
-            console.warn(`[Dismantler] Rate limit detected. Pausing 4s...`);
-            updateHUD(`Rate limit paused (4s)...`, true);
+            console.warn(`[Dismantler] Rate limit detected. Pausing 7s for full cooldown...`);
+            updateHUD(`Rate limit cool down (7s)...`, true);
             isThrottled = true;
+            throttleBackoff = Math.min(throttleBackoff + 600, 2400);
             setTimeout(() => {
               isThrottled = false;
               const targetLabel = targetCount === Infinity ? "All" : targetCount;
               updateHUD(`Dismantled: ${confirmedDismantled}/${targetLabel}`);
-            }, 4000);
+            }, 7000);
           }
         }
       }
@@ -255,7 +254,7 @@
   }
 
   // -----------------------------------------------------------
-  // 4. Visibility & Click Helpers
+  // 4. Visibility & Clean Single Click
   // -----------------------------------------------------------
   function isVisible(el) {
     if (!el) return false;
@@ -268,6 +267,7 @@
     return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
   }
 
+  // Dispatches exactly ONE clean MouseEvent sequence without duplicate triggers
   function safeClick(el) {
     if (!el || typeof el.getBoundingClientRect !== "function") return;
     const rect = el.getBoundingClientRect();
@@ -281,16 +281,6 @@
     el.dispatchEvent(new MouseEvent("mousedown", opts));
     el.dispatchEvent(new MouseEvent("mouseup", { ...opts, buttons: 0 }));
     el.dispatchEvent(new MouseEvent("click", { ...opts, buttons: 0 }));
-
-    // Trigger React onClick prop if present
-    const props = getReactProps(el);
-    if (props && typeof props.onClick === "function") {
-      try {
-        props.onClick(createSyntheticEvent(el));
-      } catch (e) {}
-    }
-
-    if (typeof el.click === "function") el.click();
   }
 
   // -----------------------------------------------------------
@@ -305,12 +295,6 @@
     });
     if (showAllBtn) {
       console.log("[Dismantler] Expanding weapons list (Show all remaining)...");
-      const props = getReactProps(showAllBtn);
-      if (props && typeof props.onClick === "function") {
-        try {
-          props.onClick(createSyntheticEvent(showAllBtn));
-        } catch (e) {}
-      }
       safeClick(showAllBtn);
       return true;
     }
@@ -335,7 +319,6 @@
       return node.parentElement || node;
     }
 
-    // 1. Search SVG icons with knife path (M22,2L17.39...)
     const knifePaths = Array.from(document.querySelectorAll("svg path")).filter((p) => {
       const d = p.getAttribute("d") || "";
       return d.startsWith("M22,2L17.39") || d.includes("M22,2L17.39,3.75");
@@ -349,7 +332,6 @@
       }
     }
 
-    // 2. Search <img> tags containing "knife.png", "/itemsv2/knife", or alt="knife"
     const imgs = Array.from(document.querySelectorAll("img"));
     for (const img of imgs) {
       if (!isVisible(img)) continue;
@@ -362,12 +344,11 @@
       }
     }
 
-    // SAFETY: Strictly filter out equipped items
+    // Safety: Strictly filter out equipped items
     return candidateTiles.filter((tile) => {
       const text = (tile.innerText || tile.textContent || "").toLowerCase();
       if (text.includes("equip.") || text.includes("equipped")) return false;
 
-      // React Fiber safety check: ensure isEquipped is not true
       const fiber = getFiber(tile);
       if (fiber) {
         let f = fiber;
@@ -378,16 +359,14 @@
           depth++;
         }
       }
-
       return true;
     });
   }
 
   // -----------------------------------------------------------
-  // 6. Popover & Dismantle Triggering
+  // 6. Popover & Clean Single-Action Dismantle Trigger
   // -----------------------------------------------------------
   function getActivePopover() {
-    // Strategy A: Floating-UI portal classes
     const popovers = Array.from(document.querySelectorAll("._5hjs9w1, ._5hjs9w2, [data-floating-ui-portal]"));
     for (const p of popovers) {
       if (isVisible(p)) {
@@ -395,38 +374,26 @@
         if (txt.includes("dismantle")) return p;
       }
     }
-
-    // Strategy B: Any visible fixed/absolute container with both "Dismantle" and "Sell"
     const allDivs = Array.from(document.querySelectorAll("div"));
     for (const div of allDivs) {
       if (!isVisible(div)) continue;
       const txt = (div.innerText || div.textContent || "").toLowerCase();
       if (txt.includes("dismantle") && txt.includes("sell")) {
         const style = window.getComputedStyle(div);
-        if (style.position === "fixed" || style.position === "absolute") {
-          return div;
-        }
+        if (style.position === "fixed" || style.position === "absolute") return div;
       }
     }
-
     return null;
   }
 
   /**
-   * Multi-layer Dismantle Trigger Mechanism:
-   * Layer 1: High-fidelity Mouse/Pointer event sequence
-   * Layer 2: Native Element .click() on target and ancestors
-   * Layer 3: Direct __reactProps$.onClick invocation with synthetic event
-   * Layer 4: Direct __reactFiber$ traversal of popover component or knife tile
+   * Single-Action Trigger:
+   * Finds the Dismantle option and fires EXACTLY ONE trigger method,
+   * then stops immediately to avoid hammering the server with duplicate mutations.
    */
   function triggerDismantle(popover, targetKnife) {
-    let triggered = false;
-
     if (popover) {
       const allDescendants = Array.from(popover.querySelectorAll("*"));
-
-      // Match elements belonging strictly to the Dismantle row.
-      // Must include "dismantle" AND exclude "sell" and "equip" to avoid selecting outer menu container.
       const dismantleCandidates = allDescendants.filter((el) => {
         if (!isVisible(el)) return false;
         const txt = (el.innerText || el.textContent || "").trim().toLowerCase();
@@ -434,139 +401,54 @@
       });
 
       if (dismantleCandidates.length > 0) {
-        // Find row element: first check candidate with __reactProps$.onClick
-        let rowEl = dismantleCandidates.find((el) => {
+        // Method A: Direct React Props onClick (cleanest single mutation)
+        for (const el of dismantleCandidates) {
           const props = getReactProps(el);
-          return props && typeof props.onClick === "function";
-        });
-
-        // Fallback: candidate with cursor: pointer or cursor-pointer class
-        if (!rowEl) {
-          rowEl = dismantleCandidates.find((el) => el.style?.cursor === "pointer" || el.classList?.contains("cursor-pointer"));
-        }
-
-        // Fallback: container element (largest candidate)
-        if (!rowEl) {
-          rowEl = dismantleCandidates[dismantleCandidates.length - 1];
-        }
-
-        // Leaf text element (element with shortest non-empty text, e.g. "Dismantle")
-        const leafEl = dismantleCandidates.reduce((shortest, el) => {
-          const len = (el.textContent || "").trim().length;
-          return len > 0 && len < (shortest.textContent || "").trim().length ? el : shortest;
-        }, dismantleCandidates[0]);
-
-        const targets = [rowEl, leafEl].filter(Boolean);
-
-        // -------------------------------------------------------------
-        // LAYER 1: DOM Event Dispatch (Pointer & Mouse Event Sequence)
-        // -------------------------------------------------------------
-        for (const target of targets) {
-          const rect = target.getBoundingClientRect();
-          const cx = rect.left + rect.width / 2;
-          const cy = rect.top + rect.height / 2;
-          const opts = {
-            bubbles: true,
-            cancelable: true,
-            view: window,
-            clientX: cx,
-            clientY: cy,
-            buttons: 1
-          };
-
-          target.dispatchEvent(new MouseEvent("mousedown", opts));
-          target.dispatchEvent(new MouseEvent("mouseup", { ...opts, buttons: 0 }));
-          target.dispatchEvent(new MouseEvent("click", { ...opts, buttons: 0 }));
-        }
-
-        // -------------------------------------------------------------
-        // LAYER 2: Native Element Click (.click())
-        // -------------------------------------------------------------
-        for (const target of targets) {
-          let cur = target;
-          while (cur && cur !== popover) {
-            if (typeof cur.click === "function") {
-              try {
-                cur.click();
-                triggered = true;
-              } catch (e) {}
-            }
-            cur = cur.parentElement;
+          if (props && typeof props.onClick === "function") {
+            try {
+              props.onClick(createSyntheticEvent(el));
+              return true; // STOP! Single action complete.
+            } catch (err) {}
           }
         }
 
-        // -------------------------------------------------------------
-        // LAYER 3: Direct React Props Trigger (__reactProps$)
-        // -------------------------------------------------------------
-        for (const target of targets) {
-          let cur = target;
-          while (cur && cur !== popover) {
-            const props = getReactProps(cur);
-            if (props && typeof props.onClick === "function") {
-              try {
-                console.log("[Dismantler] Layer 3: Invoking __reactProps$.onClick directly on Dismantle element");
-                props.onClick(createSyntheticEvent(cur));
-                triggered = true;
-                break;
-              } catch (err) {
-                console.warn("[Dismantler] Layer 3 error:", err);
-              }
-            }
-            cur = cur.parentElement;
-          }
-          if (triggered) break;
-        }
-
-        // -------------------------------------------------------------
-        // LAYER 4: React Fiber Popover Traversal (__reactFiber$)
-        // -------------------------------------------------------------
-        for (const target of targets) {
-          let fiber = getFiber(target);
+        // Method B: Fiber items array onClick
+        for (const el of dismantleCandidates) {
+          let fiber = getFiber(el);
           let depth = 0;
           while (fiber && depth < 20) {
             const props = fiber.memoizedProps;
-            if (props) {
-              // Direct Dismantle menu item component (component A in Module 71651)
-              if ((props.label === "Dismantle" || props.key === "dismantle") && typeof props.onClick === "function") {
-                console.log("[Dismantler] Layer 4: Invoked onClick from popover item Fiber (component A)");
+            if (props && Array.isArray(props.items)) {
+              const dItem = props.items.find((i) => i.key === "dismantle" || (i.label && i.label.toLowerCase().includes("dismantle")));
+              if (dItem && typeof dItem.onClick === "function") {
                 try {
-                  props.onClick();
-                  if (typeof props.closeMenu === "function") props.closeMenu();
-                  triggered = true;
-                  break;
-                } catch (e) {
-                  console.warn("[Dismantler] Layer 4 popover fiber error:", e);
-                }
-              }
-
-              // Popover items array
-              if (Array.isArray(props.items)) {
-                const dItem = props.items.find((i) => i.key === "dismantle" || (i.label && i.label.toLowerCase().includes("dismantle")));
-                if (dItem && typeof dItem.onClick === "function") {
-                  console.log("[Dismantler] Layer 4: Invoked onClick from popover items array Fiber");
-                  try {
-                    dItem.onClick();
-                    triggered = true;
-                    break;
-                  } catch (e) {
-                    console.warn("[Dismantler] Layer 4 items array error:", e);
-                  }
-                }
+                  dItem.onClick();
+                  return true; // STOP!
+                } catch (e) {}
               }
             }
             fiber = fiber.return;
             depth++;
           }
-          if (triggered) break;
+        }
+
+        // Method C: Clean single DOM MouseEvent
+        const targetEl = dismantleCandidates.find((el) => el.style?.cursor === "pointer" || el.classList?.contains("cursor-pointer")) || dismantleCandidates[0];
+        if (targetEl) {
+          const rect = targetEl.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy, buttons: 1 };
+          targetEl.dispatchEvent(new MouseEvent("mousedown", opts));
+          targetEl.dispatchEvent(new MouseEvent("mouseup", { ...opts, buttons: 0 }));
+          targetEl.dispatchEvent(new MouseEvent("click", { ...opts, buttons: 0 }));
+          return true; // STOP!
         }
       }
     }
 
-    // -----------------------------------------------------------------
-    // LAYER 4 Fallback: Direct Knife Tile Fiber Traversal
-    // -----------------------------------------------------------------
-    if (!triggered && targetKnife) {
-      console.log("[Dismantler] Layer 4 Fallback: Traversing Fiber from knife tile directly...");
+    // Method D Fallback: Direct knife tile Fiber mutation
+    if (targetKnife) {
       let fiber = getFiber(targetKnife);
       let depth = 0;
       while (fiber && depth < 25) {
@@ -574,14 +456,10 @@
         if (props && Array.isArray(props.items)) {
           const dItem = props.items.find((i) => i.key === "dismantle" || (i.label && i.label.toLowerCase().includes("dismantle")));
           if (dItem && typeof dItem.onClick === "function") {
-            console.log("[Dismantler] Layer 4 Fallback: Invoked onClick from knife tile Fiber (eu.Ay)");
             try {
               dItem.onClick();
-              triggered = true;
-              break;
-            } catch (e) {
-              console.warn("[Dismantler] Layer 4 knife tile fiber fallback error:", e);
-            }
+              return true; // STOP!
+            } catch (e) {}
           }
         }
         fiber = fiber.return;
@@ -589,7 +467,7 @@
       }
     }
 
-    return triggered;
+    return false;
   }
 
   // -----------------------------------------------------------
@@ -620,40 +498,41 @@
     }
 
     if (confirmBtn) {
-      console.log("[Dismantler] Confirm modal detected. Confirming dismantle...");
       const props = getReactProps(confirmBtn);
       if (props && typeof props.onClick === "function") {
         try {
           props.onClick(createSyntheticEvent(confirmBtn));
+          return true;
         } catch (e) {}
       }
-      confirmBtn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-      confirmBtn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-      confirmBtn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-      if (typeof confirmBtn.click === "function") confirmBtn.click();
+      safeClick(confirmBtn);
       return true;
     }
     return false;
   }
 
   // -----------------------------------------------------------
-  // 8. Main Dismantle Loop
+  // 8. Main Dismantle Loop (Human Pacing)
   // -----------------------------------------------------------
   (async function loop() {
     if (expandWeaponsList()) await sleep(600);
 
     let misses = 0;
     while (isStillActive() && confirmedDismantled < targetCount) {
+      // If server asked to slow down, wait patiently until cooldown expires
       if (isThrottled) {
-        await sleep(500);
+        console.log("[Dismantler] Throttled by server. Waiting for cooldown...");
+        while (isThrottled && isStillActive()) {
+          await sleep(500);
+        }
+        await sleep(1000);
         continue;
       }
 
-      // Pre-check for rate-limiting notices on screen
       if ((document.body.innerText || "").toLowerCase().includes("please slow down")) {
-        console.warn("[Dismantler] Screen contains rate-limit warning. Pausing 3s...");
-        updateHUD("Rate limit paused (3s)...", true);
-        await sleep(3000);
+        console.warn("[Dismantler] Screen contains rate-limit warning. Pausing 7s...");
+        updateHUD("Rate limit paused (7s)...", true);
+        await sleep(7000);
         continue;
       }
 
@@ -666,7 +545,7 @@
           await sleep(800);
           continue;
         }
-        console.log("%c[Dismantler] All knives dismantled!", "color: #10b981; font-weight: bold;");
+        console.log("%c[Dismantler] All unequipped knives dismantled!", "color: #10b981; font-weight: bold;");
         break;
       }
       misses = 0;
@@ -676,9 +555,8 @@
       const initialCount = remainingCount;
       const targetLabel = targetCount === Infinity ? "All" : targetCount;
 
-      console.log(`[Dismantler] Found ${remainingCount} knives. Checking popover status...`);
+      console.log(`[Dismantler] Found ${remainingCount} knives. Opening menu on knife #1...`);
 
-      // Check if popover is already open on screen
       let popover = getActivePopover();
       if (!popover) {
         updateHUD(`Opening menu... (${confirmedDismantled}/${targetLabel}) [${remainingCount} knives left]`);
@@ -694,7 +572,6 @@
       }
 
       if (!popover) {
-        // Retry clicking inner SVG or IMG
         const inner = targetKnife.querySelector("svg, img");
         if (inner) safeClick(inner);
 
@@ -709,29 +586,31 @@
 
       if (!isStillActive()) return;
 
-      console.log(`[Dismantler] Popover state: ${popover ? "OPEN" : "CLOSED"}. Triggering Dismantle...`);
       updateHUD(`Dismantling knife... (${confirmedDismantled}/${targetLabel})`);
 
+      // Gentle pause before clicking dismantle (natural human delay)
+      await sleep(250 + Math.random() * 200);
+
+      // Execute exactly ONE trigger action
       let triggered = triggerDismantle(popover, targetKnife);
       if (!triggered) {
-        console.warn("[Dismantler] Could not trigger via popover. Attempting direct Fiber mutation...");
         triggered = triggerDismantle(null, targetKnife);
       }
 
       if (!triggered) {
-        console.warn("[Dismantler] All trigger layers failed on knife. Retrying next tick...");
-        await sleep(600);
+        console.warn("[Dismantler] Trigger failed on knife. Retrying next tick...");
+        await sleep(800);
         continue;
       }
 
       // Check for confirmation modal (if item is Rare+)
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 3; i++) {
         if (!isStillActive()) return;
-        await sleep(120);
+        await sleep(150);
         if (triggerConfirm()) break;
       }
 
-      // Wait for server mutation & deduction detection
+      // Await server response and deduction detection
       const actionTime = Date.now();
       let deductionDetected = false;
       while (Date.now() - actionTime < 2500) {
@@ -739,17 +618,13 @@
         await sleep(150);
 
         if (isThrottled) break;
-
-        // Check if confirm modal appeared late
         triggerConfirm();
 
-        // Detection 1: DOM node detachment
         if (!document.body.contains(targetKnife)) {
           deductionDetected = true;
           break;
         }
 
-        // Detection 2: Item ID no longer in list of unequipped knives
         if (targetKnifeId) {
           const currentKnives = getUnequippedKnives();
           const exists = currentKnives.some((k) => getItemId(k) === targetKnifeId);
@@ -759,7 +634,6 @@
           }
         }
 
-        // Detection 3: Toast "Item dismantled" appears
         const toasts = Array.from(document.querySelectorAll("[class*='toast'], [role='status'], [role='alert'], div"));
         const hasToast = toasts.some((t) => isVisible(t) && (t.innerText || "").toLowerCase().includes("item dismantled"));
         if (hasToast) {
@@ -768,7 +642,6 @@
         }
       }
 
-      // Increment count on triggered dismantle
       confirmedDismantled++;
       const left = Math.max(0, initialCount - 1);
       updateHUD(`Dismantled ${confirmedDismantled}/${targetLabel} (${left} left)`);
@@ -777,7 +650,7 @@
         "color: #10b981; font-weight: bold;"
       );
 
-      // HARD STOP: Target count reached
+      // Hard stop on target reach
       if (confirmedDismantled >= targetCount) {
         console.log(
           `%c[Dismantler] Reached target (${confirmedDismantled}/${targetCount}). Stopping successfully!`,
@@ -787,8 +660,10 @@
         break;
       }
 
-      const jitter = (Math.random() - 0.5) * 400;
-      await sleep(Math.max(1200, baseInterval + jitter));
+      // Natural human pause between dismantling items (~2.1s - 2.8s + adaptive backoff)
+      const jitter = (Math.random() - 0.5) * 500;
+      const delay = Math.max(2000, baseInterval + throttleBackoff + jitter);
+      await sleep(delay);
     }
 
     const targetLabel = targetCount === Infinity ? "All" : targetCount;
