@@ -5,9 +5,8 @@
  * Safe auto-dismantler targeting crate-drop knives:
  * - Specifically targets knives (knife SVG path / 'knife.png')
  * - Strictly protects all equipped items, tanks, rifles, and pistols
- * - Scoped strictly to Floating-UI popover (never clicks header supporter button)
- * - Pure MouseEvents + direct React onClick trigger (eliminates pointerId crashes)
- * - Detailed real-time console feedback
+ * - Single-event click (prevents double-toggle open/close bug)
+ * - Scoped strictly to Floating-UI popover portal (_5hjs9w1)
  * - Anti-bot spatial divergence & randomized cadence (~1.5s - 1.8s)
  * - Adaptive backoff on "Please slow down" rate-limit notices
  * - Press 'Esc' anytime or run stopDismantler() to cancel
@@ -138,8 +137,26 @@
   observer.observe(document.body, { childList: true, subtree: true });
 
   // -----------------------------------------------------------
-  // 2. Visibility & Click Helpers (Pure MouseEvents - No setPointerCapture crashes)
+  // 2. Safe Single Click Helper
   // -----------------------------------------------------------
+  function safeClick(el) {
+    if (!el || typeof el.getBoundingClientRect !== "function") return;
+    const rect = el.getBoundingClientRect();
+    const u = Math.random() + Math.random();
+    const factorX = u > 1 ? 2 - u : u;
+    const factorY = (Math.random() + Math.random()) / 2;
+    const x = rect.left + rect.width * (0.2 + factorX * 0.6);
+    const y = rect.top + rect.height * (0.2 + factorY * 0.6);
+    const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+
+    // Fire exact MouseEvent sequence once (NO duplicate synthetic clicks)
+    el.dispatchEvent(new MouseEvent("mousedown", opts));
+    setTimeout(() => {
+      el.dispatchEvent(new MouseEvent("mouseup", opts));
+      el.dispatchEvent(new MouseEvent("click", opts));
+    }, 35);
+  }
+
   function isVisible(el) {
     if (!el) return false;
     if (typeof el.checkVisibility === "function") {
@@ -151,41 +168,9 @@
     return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
   }
 
-  function safeClick(el) {
-    if (!el || typeof el.getBoundingClientRect !== "function") return;
-    const rect = el.getBoundingClientRect();
-    const u = Math.random() + Math.random();
-    const factorX = u > 1 ? 2 - u : u;
-    const factorY = (Math.random() + Math.random()) / 2;
-    const x = rect.left + rect.width * (0.2 + factorX * 0.6);
-    const y = rect.top + rect.height * (0.2 + factorY * 0.6);
-    const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
-
-    // Pure MouseEvents - NEVER send synthetic PointerEvents because War Era calls setPointerCapture
-    el.dispatchEvent(new MouseEvent("mousedown", opts));
-    el.dispatchEvent(new MouseEvent("mouseup", opts));
-    el.dispatchEvent(new MouseEvent("click", opts));
-
-    // Try direct React onClick invocation on this element or its closest interactive parent
-    let cur = el;
-    for (let i = 0; i < 3 && cur; i++) {
-      const rKey = Object.keys(cur).find(k => k.startsWith("__reactProps$"));
-      if (rKey && cur[rKey] && typeof cur[rKey].onClick === "function") {
-        try {
-          cur[rKey].onClick({ target: cur, currentTarget: cur, stopPropagation: () => {}, preventDefault: () => {} });
-          break;
-        } catch (e) {
-          console.warn("[Dismantler] React onClick trigger warning:", e);
-        }
-      }
-      cur = cur.parentElement;
-    }
-  }
-
   // -----------------------------------------------------------
   // 3. Knife & Action Finders
   // -----------------------------------------------------------
-
   function expandWeaponsList() {
     const buttons = Array.from(document.querySelectorAll("button, [role='button'], div.cursor-pointer, [class*='cursor-pointer']"));
     const showAllBtn = buttons.find(b => {
@@ -215,7 +200,7 @@
       return node.parentElement || node;
     }
 
-    // 1. Search SVG icons with knife path
+    // 1. Search SVG icons with knife path (M22,2L17.39...)
     const knifePaths = Array.from(document.querySelectorAll("svg path")).filter(p => {
       const d = p.getAttribute("d") || "";
       return d.startsWith("M22,2L17.39") || d.includes("M22,2L17.39,3.75");
@@ -259,20 +244,33 @@
   function getDismantleMenuItem(popover) {
     if (!popover) return null;
     const elements = Array.from(popover.querySelectorAll("button, [role='button'], div, a, span"));
-    return elements.find(el => {
+    const match = elements.find(el => {
       if (!isVisible(el)) return false;
-      const text = (el.innerText || "").trim().toLowerCase();
-      if (!text || text === "dismantle item") return false;
-      return text === "dismantle" || text.startsWith("dismantle\n") || text.startsWith("dismantle ") || (text.includes("dismantle") && text.includes("+"));
+      const text = (el.textContent || el.innerText || "").trim().toLowerCase();
+      return text.includes("dismantle") && !text.includes("item");
     });
+
+    if (!match) return null;
+
+    // Climb up to the clickable container element
+    let clickable = match;
+    while (clickable && clickable !== popover && clickable.parentElement !== popover) {
+      if (clickable.matches && (clickable.matches("button, [role='button'], a, [class*='cursor-pointer']") || clickable.style?.cursor === "pointer")) {
+        return clickable;
+      }
+      clickable = clickable.parentElement;
+    }
+    return clickable || match;
   }
 
   function getConfirmationButton() {
-    const buttons = Array.from(document.querySelectorAll("button, [role='button']"));
+    const modal = document.querySelector("[role='dialog'], [class*='modal'], [class*='dialog']");
+    if (!modal) return null;
+    const buttons = Array.from(modal.querySelectorAll("button, [role='button']"));
     return buttons.find(b => {
       if (!isVisible(b)) return false;
-      const text = (b.innerText || "").trim().toLowerCase();
-      return text === "confirm" || text === "yes";
+      const text = (b.textContent || b.innerText || "").trim().toLowerCase();
+      return text.includes("confirm") || text.includes("yes") || (text.includes("dismantle") && !text.includes("cancel"));
     });
   }
 
@@ -311,7 +309,7 @@
       const initialCount = remainingCount;
       const targetLabel = targetCount === Infinity ? "All" : targetCount;
 
-      console.log(`[Dismantler] Found ${remainingCount} knives. Clicking knife...`);
+      console.log(`[Dismantler] Found ${remainingCount} knives. Opening menu on knife #1...`);
       updateHUD(`Opening menu... (${confirmedDismantled}/${targetLabel}) [${remainingCount} knives left]`);
 
       // 1. Click knife tile to open action popover
@@ -332,9 +330,9 @@
       }
 
       if (!dismantleBtn) {
-        // Fallback: try clicking direct inner child if wrapper click was intercepted
-        console.warn("[Dismantler] Popover not detected yet. Retrying knife click on inner child...");
-        const inner = targetKnife.querySelector("svg, img, div");
+        // Fallback: try clicking direct inner SVG/IMG if outer container didn't trigger
+        console.warn("[Dismantler] Popover not visible. Trying direct click on inner element...");
+        const inner = targetKnife.querySelector("svg, img");
         if (inner) safeClick(inner);
         await new Promise(r => setTimeout(r, 500));
         popover = getActivePopover();
@@ -347,7 +345,7 @@
         continue;
       }
 
-      console.log(`[Dismantler] Popover confirmed open. Clicking Dismantle: "${dismantleBtn.innerText.replace(/\n/g, ' ')}"`);
+      console.log(`[Dismantler] Popover open. Clicking Dismantle option...`);
       updateHUD(`Dismantling knife... (${confirmedDismantled}/${targetLabel})`);
 
       // 2. Click "Dismantle" inside the popover
