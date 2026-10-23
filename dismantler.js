@@ -43,8 +43,8 @@
   const baseInterval = 2300;
 
   let rawInput = prompt(
-    "How many knives to dismantle?\n\nEnter a number (e.g. 5, 10, 20) or 'all' to dismantle all unequipped knives:",
-    "10"
+    "How many knives to dismantle?\n\nEnter 1 to test, a count (e.g. 5, 10), or 'all' to dismantle all unequipped knives:",
+    "1"
   );
   if (rawInput === null) {
     console.log("[Dismantler] Cancelled by user.");
@@ -52,7 +52,7 @@
   }
 
   rawInput = rawInput.trim().toLowerCase();
-  let targetCount = 10;
+  let targetCount = 1;
   if (rawInput === "all") {
     targetCount = Infinity;
   } else if (rawInput !== "") {
@@ -475,13 +475,13 @@
   // -----------------------------------------------------------
   function triggerConfirm() {
     const modals = Array.from(document.querySelectorAll("[role='dialog'], [class*='modal'], [class*='dialog']"));
-    const visibleModal = modals.find((m) => isVisible(m) && (m.innerText || "").includes("Dismantle Item"));
+    const visibleModal = modals.find((m) => isVisible(m) && !m.__warera_confirmed__ && (m.innerText || "").includes("Dismantle Item"));
 
     let confirmBtn = null;
     if (visibleModal) {
       const buttons = Array.from(visibleModal.querySelectorAll("button, [role='button'], div"));
       confirmBtn = buttons.find((b) => {
-        if (!isVisible(b)) return false;
+        if (!isVisible(b) || b.__warera_confirmed__) return false;
         const txt = (b.textContent || b.innerText || "").trim().toLowerCase();
         return txt === "confirm" || (txt.includes("confirm") && !txt.includes("cancel"));
       });
@@ -490,7 +490,7 @@
       if (bodyTxt.includes("Dismantle Item") || bodyTxt.includes("Are you sure you want to dismantle")) {
         const allBtns = Array.from(document.querySelectorAll("button, [role='button'], div"));
         confirmBtn = allBtns.find((b) => {
-          if (!isVisible(b)) return false;
+          if (!isVisible(b) || b.__warera_confirmed__) return false;
           const txt = (b.textContent || b.innerText || "").trim().toLowerCase();
           return txt === "confirm";
         });
@@ -498,6 +498,10 @@
     }
 
     if (confirmBtn) {
+      confirmBtn.__warera_confirmed__ = true;
+      if (visibleModal) visibleModal.__warera_confirmed__ = true;
+      console.log("[Dismantler] Auto-confirming dismantle modal (exactly once)...");
+
       const props = getReactProps(confirmBtn);
       if (props && typeof props.onClick === "function") {
         try {
@@ -604,10 +608,14 @@
       }
 
       // Check for confirmation modal (if item is Rare+)
-      for (let i = 0; i < 3; i++) {
+      let modalConfirmed = false;
+      for (let i = 0; i < 4; i++) {
         if (!isStillActive()) return;
-        await sleep(150);
-        if (triggerConfirm()) break;
+        await sleep(100);
+        if (triggerConfirm()) {
+          modalConfirmed = true;
+          break;
+        }
       }
 
       // Await server response and deduction detection
@@ -618,7 +626,11 @@
         await sleep(150);
 
         if (isThrottled) break;
-        triggerConfirm();
+
+        // Check confirm modal only if not already confirmed
+        if (!modalConfirmed && triggerConfirm()) {
+          modalConfirmed = true;
+        }
 
         if (!document.body.contains(targetKnife)) {
           deductionDetected = true;
