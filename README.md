@@ -26,7 +26,7 @@ Auto-dismantles low-tier crate-drop knives for scraps without accidentally scrap
 1. Open your inventory on [app.warera.io](https://app.warera.io).
 2. Open the Console (**`F12`** or **`Ctrl + Shift + K`** in Firefox).
 3. Copy the code in **[`dismantler.js`](dismantler.js)**, paste it into the console, and press **Enter**.
-4. Enter how many knives to dismantle (default: `10`, or enter a custom number like `25`, or `all`).
+4. Enter how many knives to dismantle (default: `1`, or enter a custom number like `10`, `25`, or `all`).
 
 - **Stop anytime**: Click the floating red **`[⏹ STOP]`** button on screen, press **`Esc`**, or run `stopDismantler()` in the console.
 
