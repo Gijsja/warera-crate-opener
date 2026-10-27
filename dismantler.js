@@ -475,7 +475,11 @@
   // -----------------------------------------------------------
   function triggerConfirm() {
     const modals = Array.from(document.querySelectorAll("[role='dialog'], [class*='modal'], [class*='dialog']"));
-    const visibleModal = modals.find((m) => isVisible(m) && !m.__warera_confirmed__ && (m.innerText || "").includes("Dismantle Item"));
+    const visibleModal = modals.find((m) => {
+      if (!isVisible(m) || m.__warera_confirmed__) return false;
+      const txt = (m.innerText || m.textContent || "").toLowerCase();
+      return txt.includes("dismantle item") || txt.includes("are you sure you want to dismantle");
+    });
 
     let confirmBtn = null;
     if (visibleModal) {
@@ -486,8 +490,8 @@
         return txt === "confirm" || (txt.includes("confirm") && !txt.includes("cancel"));
       });
     } else {
-      const bodyTxt = document.body.innerText || "";
-      if (bodyTxt.includes("Dismantle Item") || bodyTxt.includes("Are you sure you want to dismantle")) {
+      const bodyTxt = (document.body.innerText || "").toLowerCase();
+      if (bodyTxt.includes("dismantle item") || bodyTxt.includes("are you sure you want to dismantle")) {
         const allBtns = Array.from(document.querySelectorAll("button, [role='button'], div"));
         confirmBtn = allBtns.find((b) => {
           if (!isVisible(b) || b.__warera_confirmed__) return false;

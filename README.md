@@ -12,9 +12,9 @@ Auto-opens inventory crates and loot boxes one by one with server-confirmed dedu
 1. Open your inventory on [app.warera.io](https://app.warera.io).
 2. Press **`F12`** (or **`Ctrl + Shift + K`** in Firefox / **`Ctrl + Shift + J`** in Chrome) to open the Console.
 3. Copy the code in **[`opener.js`](opener.js)**, paste it into the console, and press **Enter**.
-4. Enter how many crates you want to open (e.g. `10`).
+4. Enter how many crates you want to open (e.g. `10`, `30`, or `all`).
 
-- **Stop anytime**: Press **`Esc`** or run `stopOpener()` in the console.
+- **Stop anytime**: Click the floating red **`[⏹ STOP]`** button on screen, press **`Esc`**, or run `stopOpener()` in the console.
 
 ---
 
